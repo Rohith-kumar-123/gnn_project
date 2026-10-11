@@ -1,0 +1,8 @@
+torch>=2.1
+numpy
+pandas>=2.0
+scikit-learn
+scipy
+matplotlib
+pyarrow
+datasets    # only needed if you load the data from Hugging Face instead of a CSV

@@ -1,0 +1,6 @@
+data/raw/*
+data/processed/*
+outputs/*
+!**/.gitkeep
+__pycache__/
+*.pyc
