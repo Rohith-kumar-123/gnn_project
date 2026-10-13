@@ -1,104 +1,129 @@
-# HR-GNN: Historical- and Relational-aware Graph Learning for Fraud Detection
 
-Detects laundering transactions in **AMLSim HI-Small** with a GNN that knows **how long an account has been active**
-and **how trustworthy each transaction link is**, and compares it with a plain GCN.
+# HR-GNN: Financial Fraud Detection
 
-## Idea
+## About the Project
 
-| Module | What it does |
-|---|---|
-| **A. History + persistence** | Per account: active days, active-day ratio, streak, recency, past amounts, counterparties, burstiness. A gate turns persistence into a trust score `p_v`. |
-| **B. Edge reliability** | `r_uv` in [0,1] for every transaction, from both accounts' history, the amount and the edge age. |
-| **C. Weighted message passing** | Neighbours count more if persistent (`p_u`), recent (`exp(-λ·dt)`) and reliable (`r_uv`). A second channel keeps the unreliable neighbourhood as a signal. |
-| **D. Edge classifier** | Fraud score per transaction from both account embeddings, the transaction features and `r_uv`. |
+HR-GNN (Historical- and Relational-aware Graph Neural Network) is a machine learning project designed to identify suspicious financial transactions, particularly money-laundering transactions.
 
-Loss = focal loss + β · reliability loss (weak supervision, training labels only) + γ · entropy of `r`.
+The model represents financial accounts as nodes and transactions as edges in a graph. It combines historical account behaviour, transaction relationships, and learned edge-reliability scores to predict the probability that a transaction is fraudulent.
 
-## Folder structure
+## Project Objectives
 
+- Detect suspicious financial transactions using graph neural networks.
+- Use historical account activity to improve transaction representations.
+- Learn edge-reliability scores to control information flow between connected accounts.
+- Evaluate fraud detection under severe class imbalance.
+- Study the contribution of different model components through ablation experiments.
+
+## How the Model Works
+
+1. **Input Processing:** Transaction records are sorted chronologically, and numerical features are standardized using training data.
+2. **Node Encoding:** Account features are transformed into learned representations using two fully connected layers.
+3. **Persistence Modelling:** Historical account features are used to calculate an optional persistence score.
+4. **Edge Reliability:** The model estimates a reliability score for each transaction edge.
+5. **Message Passing:** Information is aggregated between connected accounts in both directions, using temporal weights and optional reliability channels.
+6. **Fraud Prediction:** A transaction classifier combines the learned endpoint representations and transaction features to estimate fraud probability.
+
+## Dataset
+
+This project uses the synthetic AMLSim HI-Small anti-money-laundering dataset.
+
+- Transactions: 5,078,345
+- Accounts: 515,080
+- Labelled laundering transactions: 5,177
+- Chronological split: 60% training, 20% validation, 20% testing
+
+Dataset: https://huggingface.co/datasets/bbfizp/AMLSim-HI-Small
+
+Only approximately 0.102% of transactions are labelled as laundering, making class imbalance a major challenge.
+
+## Model Configuration
+
+- Node encoder: 2 fully connected layers
+- Graph message-passing layers: 2
+- Hidden dimension: 32
+- Classifier hidden dimension: 64
+- Dropout: 0.2
+- Optimizer: Adam
+- Learning rate: 0.003
+- Weight decay: 0.00001
+- Training loss: Focal loss
+- Negative sampling: Up to 50 negative transactions per positive transaction
+- Early stopping: Validation Average Precision
+- Evaluation: 5 random seeds
+
+## Technologies Used
+
+- Python
+- PyTorch
+- Graph Neural Networks
+- Machine Learning
+- Pandas and NumPy
+- Matplotlib
+
+## Experimental Results
+
+| Model | Average Precision (AP) |
+|---|---:|
+| GCN baseline | 0.4479 |
+| GCN + History | 0.5818 |
+| GCN + Reliability | 0.4885 |
+| HR-GNN without time decay | 0.6325 |
+| HR-GNN without persistence | 0.6347 |
+| HR-GNN single channel | 0.6400 |
+| HR-GNN full model | 0.6385 |
+
+The full HR-GNN model achieved an AP of 0.6385, compared with 0.4479 for the baseline GCN.
+
+At a 0.5% transaction-review budget, the full model achieved a fraud recall of 0.7686, compared with 0.6080 for the baseline GCN.
+
+The single-channel variant achieved slightly higher mean AP than the full dual-channel model. The improvement over the history-aware GCN was not statistically significant after multiple-comparison correction.
+
+## Model Variants
+
+- **GCN:** Conventional graph convolutional baseline.
+- **GCN + History:** Baseline augmented with historical account features.
+- **GCN + Reliability:** Baseline with reliability-aware learning.
+- **HR-GNN without Time Decay:** Tests the contribution of temporal decay.
+- **HR-GNN without Persistence:** Tests the contribution of persistence weighting.
+- **HR-GNN Single Channel:** Uses only the reliability-weighted message channel.
+- **HR-GNN Full:** Combines the proposed components, including dual-channel message passing.
+
+## Installation and Usage
+
+Clone the repository:
+
+```bash
+git clone https://github.com/Rohith-kumar-123/gnn_project.git
+cd gnn_project
 ```
-hr-gnn-fraud/
-├── README.md
-├── requirements.txt
-├── src/
-│   ├── config.py     settings + the list of model variants (baseline, ablations, full model)
-│   ├── data.py       load, sort by time, 60/20/20 chronological split, feature cache
-│   ├── features.py   persistence / history features and node snapshots (leak-free)
-│   ├── graph.py      per-phase graph tensors
-│   ├── model.py      HR-GNN (one class; switches turn modules on/off)
-│   ├── train.py      training, checkpoints/resume, model saving, load_model(), predict()
-│   └── metrics.py    AP, AUC, precision, recall, F1, alert rate, recall@alert-budget
-├── scripts/
-│   ├── eda.py              data overview
-│   ├── run_experiments.py  train + evaluate all variants x seeds, significance tests
-│   └── make_report.py      alert-budget curves, reliability histogram, cold-start table
-├── data/    raw/ processed/   (processed/ holds the feature cache)
-└── outputs/                   (results, see below)
-```
 
-## Run (Colab, data on Google Drive)
+Create and activate a virtual environment if desired, then install the dependencies listed in the project's requirements file.
 
-```python
-from google.colab import drive; drive.mount('/content/drive')
-!git clone https://github.com/Rohith-kumar-123/GNN.git /content/GNN
-%cd /content/GNN
-!pip -q install pyarrow
+Run the training or evaluation script provided in the repository.
 
-CSV = "/content/drive/MyDrive/HI-Small_Trans.csv"
-OUT = "/content/drive/MyDrive/gnn_outputs"
-
-!python scripts/eda.py --csv "{CSV}"
-!python scripts/run_experiments.py --csv "{CSV}" --seeds 5 --out {OUT}
-!python scripts/make_report.py --csv "{CSV}" --out {OUT}
-```
-
-If Colab disconnects, run the same cells again: finished runs are skipped and an interrupted run continues
-from its last checkpoint (saved every 25 epochs). Use `--variants gcn hrgnn` to run only some models.
-
-## What is saved (in `--out`)
-
-| Path | Content |
-|---|---|
-| `results_summary.csv`, `results_long.csv` | mean ± std table, and one row per model/seed |
-| `runs/<model>_s<seed>.json` | validation + test metrics, best epoch, training time |
-| `runs/<model>_s<seed>.npz` | test labels, fraud scores, reliability, row numbers |
-| `models/<model>_s<seed>.pt` | **final model** (weights, settings, alert threshold) for the dashboard |
-| `ckpt/` | temporary crash checkpoints, deleted when a run finishes |
-
-## Using a saved model (dashboard)
-
-```python
-from src.config import DataConfig
-from src.data import prepare
-from src.train import predict
-
-prep = prepare(DataConfig(csv_path=CSV))                 # loads the cached features
-df = predict(prep, f"{OUT}/models/hrgnn_s0.pt", phase="test")
-alerts = df[df.alert].sort_values("fraud_score", ascending=False)
-```
-`df` has one row per transaction: timestamp, from/to account, amount, payment format, `fraud_score`,
-`alert` (above the validation-chosen threshold), `reliability` and the true `label`.
-For a dashboard that only displays results, the saved `.npz` files already contain scores for the test period.
-
-## Models compared
-
-`gcn` (plain GCN baseline) · `gcn_hist` (history only) · `gcn_reliability` (reliability only) ·
-`hrgnn_no_decay` · `hrgnn_no_persistence` · `hrgnn_single_channel` · `hrgnn` (full model)
-
-## Evaluation protocol (no leakage)
-
-* Sorted by timestamp, split **60 / 20 / 20 chronologically**.
-* Per-transaction history uses only earlier rows; persistence counts whole earlier days.
-* The graph used to score a phase contains only transactions up to the end of that phase; no labels at inference.
-* Standardisation statistics come from training rows only; the F1 threshold is chosen on validation and frozen for test.
-* Metrics: AP (primary), ROC-AUC, precision, recall, F1, false alerts per 1,000 transactions, recall at 0.1 / 0.5 / 1 % alert budget.
-* 5 seeds, mean ± std, paired t-test of HR-GNN against every other variant (Holm-adjusted).
+**Note:** Check the actual script names, dependency file, and dataset paths in the repository before running the project. Exact commands depend on the files included in the current version.
 
 ## Limitations
 
-* The GNN's account snapshot for *training* edges includes later training days (no labels, never touches val/test).
-* The data starts at day 0, so every account looks new at the beginning (left censoring).
-* The test period (days 7–17) has a higher fraud rate than training; compare models only within the same split.
-* "Suspicious" edges for reliability supervision are weak labels (edges touching training-period fraud accounts).
-* The plain GCN uses mean-normalised aggregation, not PyG's symmetric normalisation.
-* HI-Small is simulated; validate on another benchmark as future work.
+- The dataset is synthetic and may not represent all real-world financial transaction patterns.
+- Graph snapshots are constructed at phase boundaries rather than at every individual training transaction timestamp.
+- Reliability supervision uses weak targets derived from training fraud activity.
+- Results are based on five random seeds and one chronological split.
+- Additional evaluation on real-world data is needed.
+
+## Future Improvements
+
+- Evaluate the model on real-world financial transaction datasets.
+- Improve strict time-causal graph construction.
+- Test more random seeds and chronological splits.
+- Investigate better edge-reliability supervision.
+- Explore methods to reduce false alerts while maintaining fraud recall.
+
+## Repository
+
+GitHub: https://github.com/Rohith-kumar-123/gnn_project
+
+## Disclaimer
+
+This project is intended for academic and experimental use. Model predictions indicate potentially suspicious transactions and should not be treated as proof of financial crime.
